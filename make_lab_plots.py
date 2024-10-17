@@ -12,4 +12,5 @@ date = datetime(year=2022, month=3, day=30, hour=12)
 model = model_plotter(date=date, source='GFS')
 
 # Make the 4 panel plot
-model.four_panel(spath=f'four_panel_{date.strftime("%Y%m%d_%H%MUTC")}.png', point=(-86.81, 33.52))
+spath = f'four_panel_{date.strftime("%Y%m%d_%H%MUTC")}.png'
+model.four_panel(spath=spath, point=(-86.81, 33.52))

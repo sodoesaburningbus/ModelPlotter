@@ -95,7 +95,7 @@ class model_plotter:
 
 
     ### Function to make a standardized 4-panel plot
-    def four_panel(self, spath=None, latlon_extent=[-135, -60, 20, 55], point=None):
+    def four_panel(self, spath=None, latlon_extent=[-135, -60, 20, 55], point=None, nbarbs=15):
 
         # Preserve the current variable list
         old_vars = self.vars
@@ -134,6 +134,9 @@ class model_plotter:
         cb = fig.colorbar(fcont, ax=axes[0,0], orientation='horizontal', pad=0.02, aspect=50)
         cb.set_label('Wind Speed (kts)', fontsize=14, fontweight='roman')
 
+        axes[0,0].barbs(data['lons'][::nbarbs, ::nbarbs], data['lats'][::nbarbs, ::nbarbs],
+                        data['UGRD250 mb'][::nbarbs,::nbarbs], data['VGRD250 mb'][::nbarbs,::nbarbs])
+
         # 500 mb
         axes[0,1].set_title('500 mb', loc='left', ha='left', fontsize=16, fontweight='bold')
         hcont = axes[0,1].contour(data['lons'], data['lats'], data['HGT500 mb'], colors='black', levels=20)
@@ -143,6 +146,9 @@ class model_plotter:
         fcont = axes[0,1].pcolormesh(data['lons'], data['lats'], data['ABSV500 mb'], cmap=self.vort500, norm=norm, shading='nearest')
         cb = fig.colorbar(fcont, ax=axes[0,1], orientation='horizontal', pad=0.02, aspect=50)
         cb.set_label('Absolute Vorticity (s$^{-1}$)', fontsize=14, fontweight='roman')
+
+        axes[0,1].barbs(data['lons'][::nbarbs, ::nbarbs], data['lats'][::nbarbs, ::nbarbs],
+                        data['UGRD500 mb'][::nbarbs,::nbarbs], data['VGRD500 mb'][::nbarbs,::nbarbs])
 
         # 700 mb
         axes[1,0].set_title('700 mb', loc='left', ha='left', fontsize=16, fontweight='bold')
@@ -157,6 +163,9 @@ class model_plotter:
         mcont = axes[1,0].contour(data['lons'], data['lats'], data['RH700 mb'], colors='forestgreen', levels=[50,80], linestyles='--')
         axes[1,0].clabel(mcont, mcont.levels, inline=True, fontsize=10)
 
+        axes[1,0].barbs(data['lons'][::nbarbs, ::nbarbs], data['lats'][::nbarbs, ::nbarbs],
+                        data['UGRD700 mb'][::nbarbs,::nbarbs], data['VGRD700 mb'][::nbarbs,::nbarbs])
+
         # 850 mb
         axes[1,1].set_title('850 mb', loc='left', ha='left', fontsize=16, fontweight='bold')
         hcont = axes[1,1].contour(data['lons'], data['lats'], data['HGT850 mb'], colors='black', levels=20)
@@ -169,6 +178,9 @@ class model_plotter:
 
         mcont = axes[1,1].contour(data['lons'], data['lats'], data['RH850 mb'], colors='forestgreen', levels=[50,80], linestyles='--')
         axes[1,1].clabel(mcont, mcont.levels, inline=True, fontsize=10)
+
+        axes[1,1].barbs(data['lons'][::nbarbs, ::nbarbs], data['lats'][::nbarbs, ::nbarbs],
+                        data['UGRD850 mb'][::nbarbs,::nbarbs], data['VGRD850 mb'][::nbarbs,::nbarbs])
 
         # Add decorations
         for ax in axes.flatten():
