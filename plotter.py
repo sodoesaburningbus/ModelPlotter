@@ -93,9 +93,130 @@ class model_plotter:
 
     ### Function to make a single plot of each variable
 
+    ### Function make a cross section of a variable (or two!)
+    ### Inputs:
+    ###  var1, name of first variable to cross-section (contours)
+    ###  var2, optional, name of second variable to cross-section (shading)
+    ###  spath, optional, string, location to save the image
+    ###  lonlat, location to take cross-section
+    ###  direction, direction of cross-section. May be 'we' or 'sn'
+    ###    for west-east and sotuh-north
+
+    def cross_section(self, var1, lonlat, direction, var2=None, spath=None, xlimit=(-135, -60), ylimit=(1000, 50), nlevs=15):
+
+        # Check if potetnial temp is desired
+        theta_flag = False
+        if (var1 == 'THETA'):
+            var1 = 'TMP'
+            theta_flag = True
+
+        # Download the data
+        plevs = [
+            "40 mb", "50 mb", "70 mb", "100 mb", "150 mb", "200 mb", "250 mb", "300 mb", "350 mb",
+            "400 mb", "450 mb", "500 mb", "550 mb", "600 mb", "650 mb", "700 mb", "750 mb", "800 mb",
+            "850 mb", "900 mb", "925 mb", "950 mb", "975 mb", "1000 mb"
+        ]
+        if (var2 != None):
+            self.set_vars({var1:plevs, var2: plevs, 'PRES': ['surface']})
+        else:
+            self.set_vars({var1:plevs, 'PRES': ['surface']})
+        data = self.download_vars()
+
+        # Locate the index of the grid for the cross-section
+        # and extract data
+        var1_cross = []
+        # For west-east cross-sections
+        if (direction.lower() == 'we'):
+            ind = np.argmin((data['lats'][:,0] - lonlat)**2)
+            x = data['lons'][ind,:]
+            terrain = data['PRESsurface'][ind,:]/100.0 # hPa
+            for p in plevs:
+                var1_cross.append(data[var1+p][ind,:])
+
+            # modify extent if necessary
+            xlimit = list(xlimit)
+            if (xlimit[0] < 0):
+                xlimit[0] = xlimit[0]+360
+            if (xlimit[1] < 0):
+                xlimit[1] = xlimit[1]+360
+
+            # Repeat for second variable if desired
+            if (var2 != None):
+                var2_cross = []
+                for p in plevs:
+                    var2_cross.append(data[var2+p][ind,:])
+
+        # For south-north cross sections
+        elif (direction.lower() == 'sn'):
+            ind = np.argmin((data['lons'][:,0] - lonlat)**2)
+            x = data['lats'][:,ind]
+            terrain = data['PRESsurface'][ind,:]/100.0 # hPa
+            for p in plevs:
+                var1_cross.append(data[var1+p][:,ind])
+
+            # Repeat for second variable if desired
+            if (var2 != None):
+                var2_cross = []
+                for p in plevs:
+                    var2_cross.append(data[var2+p][ind,:])
+
+        else:
+            raise ValueError("Direction must be either 'we' or 'sn'")
+
+        # Convert to numpy arrays
+        var1_cross = np.array(var1_cross)
+        plevs = np.array([p.replace(' mb','') for p in plevs], dtype=np.float32)
+        if (var2 != None):
+            var2_cross = np.array(var2_cross)
+
+        # Compute potential temperature if desired
+        if theta_flag:
+            var1_cross = var1_cross*(1000.0/np.stack([plevs]*x.size, axis=-1))**(287.0/1004.0)
+            var1 = 'THETA (K)'
+
+        # Nan the data outside of the bounds
+        # X bounds
+        mask = (np.stack([x]*plevs.size, axis=0)<xlimit[0]-0.30) | (np.stack([x]*plevs.size, axis=0)>xlimit[1]+0.30)
+        var1_cross[mask] = np.nan
+        if (var2 != None):
+            var2_cross[mask] = np.nan
+
+        # Y bounds
+        mask = (np.stack([plevs]*x.size, axis=-1)>ylimit[0]+50) | (np.stack([plevs]*x.size, axis=-1)<ylimit[1]-50)
+        var1_cross[mask] = np.nan
+        if (var2 != None):
+            var2_cross[mask] = np.nan
+
+        # Make the figure
+        fig, ax = pp.subplots(constrained_layout=True)
+
+        cont1 = ax.contour(x, plevs, var1_cross, colors='red', levels=nlevs, zorder=9)
+        ax.contour(x, plevs, var1_cross, colors='black', levels=nlevs, zorder=10)
+        ax.clabel(cont1, inline=True, inline_spacing=0.5, zorder=11)
+
+        # Shade terrain
+        ax.fill_between(x, 1000, y2=terrain, color='sienna')
+
+        # Second variable if desired
+        if (var2 != None):
+            cont2 = ax.contourf(x, plevs, var2_cross)
+            cb = fig.colorbar(cont2, ax=ax, orientation='vertical')
+            cb.set_label(var2)
+
+        # Set Limits
+        ax.set_xlim(xlimit)
+        ax.set_ylim(ylimit)
+
+        # Decorate
+        ax.set_title(var1, fontsize=14, fontweight='bold')
+
+        if (type(spath) == str):
+                pp.savefig(spath)
+
+        return fig, ax
 
     ### Function to make a standardized 4-panel plot
-    def four_panel(self, spath=None, latlon_extent=[-135, -60, 20, 55], point=None, nbarbs=15):
+    def four_panel(self, spath=None, latlon_extent=[-135, -60, 20, 55], point=None, nbarbs=15, projection=ccrs.PlateCarree()):
 
         # Preserve the current variable list
         old_vars = self.vars
@@ -117,7 +238,8 @@ class model_plotter:
         wspd250 = np.sqrt(data['UGRD250 mb']**2+data['VGRD250 mb']**2)*1.94
 
         # Create the map projection
-        proj = ccrs.PlateCarree()
+        data_proj = ccrs.PlateCarree()
+        proj = projection
 
         # Make the plots
         fig, axes = pp.subplots(nrows=2, ncols=2, figsize=(18,12), subplot_kw={'projection':proj}, constrained_layout=True)
@@ -126,61 +248,61 @@ class model_plotter:
 
         # 250 mb
         axes[0,0].set_title('250 mb', loc='left', ha='left', fontsize=16, fontweight='bold')
-        hcont = axes[0,0].contour(data['lons'], data['lats'], data['HGT250 mb'], colors='black', levels=20)
+        hcont = axes[0,0].contour(data['lons'], data['lats'], data['HGT250 mb'], colors='black', levels=20, transform=data_proj)
         axes[0,0].clabel(hcont, hcont.levels, inline=True, fontsize=10)
 
         norm = mcolor.BoundaryNorm(np.arange(30,125,5),self.wspd250.N, extend='both')
-        fcont = axes[0,0].pcolormesh(data['lons'], data['lats'], wspd250, cmap=self.wspd250, norm=norm, shading='nearest')
+        fcont = axes[0,0].pcolormesh(data['lons'], data['lats'], wspd250, cmap=self.wspd250, norm=norm, shading='nearest', transform=data_proj)
         cb = fig.colorbar(fcont, ax=axes[0,0], orientation='horizontal', pad=0.02, aspect=50)
         cb.set_label('Wind Speed (kts)', fontsize=14, fontweight='roman')
 
         axes[0,0].barbs(data['lons'][::nbarbs, ::nbarbs], data['lats'][::nbarbs, ::nbarbs],
-                        data['UGRD250 mb'][::nbarbs,::nbarbs], data['VGRD250 mb'][::nbarbs,::nbarbs])
+                        data['UGRD250 mb'][::nbarbs,::nbarbs], data['VGRD250 mb'][::nbarbs,::nbarbs], transform=data_proj)
 
         # 500 mb
         axes[0,1].set_title('500 mb', loc='left', ha='left', fontsize=16, fontweight='bold')
-        hcont = axes[0,1].contour(data['lons'], data['lats'], data['HGT500 mb'], colors='black', levels=20)
+        hcont = axes[0,1].contour(data['lons'], data['lats'], data['HGT500 mb'], colors='black', levels=20, transform=data_proj)
         axes[0,1].clabel(hcont, hcont.levels, inline=True, fontsize=10)
 
         norm = mcolor.BoundaryNorm(np.linspace(-0.0016, 0.0016, 33), self.vort500.N, extend='both')
-        fcont = axes[0,1].pcolormesh(data['lons'], data['lats'], data['ABSV500 mb'], cmap=self.vort500, norm=norm, shading='nearest')
+        fcont = axes[0,1].pcolormesh(data['lons'], data['lats'], data['ABSV500 mb'], cmap=self.vort500, norm=norm, shading='nearest', transform=data_proj)
         cb = fig.colorbar(fcont, ax=axes[0,1], orientation='horizontal', pad=0.02, aspect=50)
         cb.set_label('Absolute Vorticity (s$^{-1}$)', fontsize=14, fontweight='roman')
 
         axes[0,1].barbs(data['lons'][::nbarbs, ::nbarbs], data['lats'][::nbarbs, ::nbarbs],
-                        data['UGRD500 mb'][::nbarbs,::nbarbs], data['VGRD500 mb'][::nbarbs,::nbarbs])
+                        data['UGRD500 mb'][::nbarbs,::nbarbs], data['VGRD500 mb'][::nbarbs,::nbarbs], transform=data_proj)
 
         # 700 mb
         axes[1,0].set_title('700 mb', loc='left', ha='left', fontsize=16, fontweight='bold')
-        hcont = axes[1,0].contour(data['lons'], data['lats'], data['HGT700 mb'], colors='black', levels=20)
+        hcont = axes[1,0].contour(data['lons'], data['lats'], data['HGT700 mb'], colors='black', levels=20, transform=data_proj)
         axes[1,0].clabel(hcont, hcont.levels, inline=True, fontsize=10)
 
         norm = mcolor.BoundaryNorm(np.linspace(-20, 20, 21), self.temp700.N, extend='both')
-        fcont = axes[1,0].pcolormesh(data['lons'], data['lats'], data['TMP700 mb']-273.15, cmap=self.temp700, norm=norm, shading='nearest')
+        fcont = axes[1,0].pcolormesh(data['lons'], data['lats'], data['TMP700 mb']-273.15, cmap=self.temp700, norm=norm, shading='nearest', transform=data_proj)
         cb = fig.colorbar(fcont, ax=axes[1,0], orientation='horizontal', pad=0.02, aspect=50)
         cb.set_label('Temperature (°C)', fontsize=14, fontweight='roman')
 
-        mcont = axes[1,0].contour(data['lons'], data['lats'], data['RH700 mb'], colors='forestgreen', levels=[50,80], linestyles='--')
+        mcont = axes[1,0].contour(data['lons'], data['lats'], data['RH700 mb'], colors='forestgreen', levels=[50,80], linestyles='--', transform=data_proj)
         axes[1,0].clabel(mcont, mcont.levels, inline=True, fontsize=10)
 
         axes[1,0].barbs(data['lons'][::nbarbs, ::nbarbs], data['lats'][::nbarbs, ::nbarbs],
-                        data['UGRD700 mb'][::nbarbs,::nbarbs], data['VGRD700 mb'][::nbarbs,::nbarbs])
+                        data['UGRD700 mb'][::nbarbs,::nbarbs], data['VGRD700 mb'][::nbarbs,::nbarbs], transform=data_proj)
 
         # 850 mb
         axes[1,1].set_title('850 mb', loc='left', ha='left', fontsize=16, fontweight='bold')
-        hcont = axes[1,1].contour(data['lons'], data['lats'], data['HGT850 mb'], colors='black', levels=20)
+        hcont = axes[1,1].contour(data['lons'], data['lats'], data['HGT850 mb'], colors='black', levels=20, transform=data_proj)
         axes[1,1].clabel(hcont, hcont.levels, inline=True, fontsize=10)
 
         norm = mcolor.BoundaryNorm(np.linspace(-20, 20, 21), self.temp700.N, extend='both')
-        fcont = axes[1,1].pcolormesh(data['lons'], data['lats'], data['TMP850 mb']-273.15, cmap=self.temp700, norm=norm, shading='nearest')
+        fcont = axes[1,1].pcolormesh(data['lons'], data['lats'], data['TMP850 mb']-273.15, cmap=self.temp700, norm=norm, shading='nearest', transform=data_proj)
         cb = fig.colorbar(fcont, ax=axes[1,1], orientation='horizontal', pad=0.02, aspect=50)
         cb.set_label('Temperature (°C)', fontsize=14, fontweight='roman')
 
-        mcont = axes[1,1].contour(data['lons'], data['lats'], data['RH850 mb'], colors='forestgreen', levels=[50,80], linestyles='--')
+        mcont = axes[1,1].contour(data['lons'], data['lats'], data['RH850 mb'], colors='forestgreen', levels=[50,80], linestyles='--', transform=data_proj)
         axes[1,1].clabel(mcont, mcont.levels, inline=True, fontsize=10)
 
         axes[1,1].barbs(data['lons'][::nbarbs, ::nbarbs], data['lats'][::nbarbs, ::nbarbs],
-                        data['UGRD850 mb'][::nbarbs,::nbarbs], data['VGRD850 mb'][::nbarbs,::nbarbs])
+                        data['UGRD850 mb'][::nbarbs,::nbarbs], data['VGRD850 mb'][::nbarbs,::nbarbs], transform=data_proj)
 
         # Add decorations
         for ax in axes.flatten():
@@ -188,12 +310,12 @@ class model_plotter:
             ax.add_feature(cfeature.COASTLINE)
             ax.add_feature(cfeature.BORDERS)
             ax.add_feature(cfeature.STATES)
-            ax.set_extent(latlon_extent)
+            ax.set_extent(latlon_extent, crs=data_proj)
 
         # Add a point of interest
         if (point != None):
             for ax in axes.flatten():
-                ax.scatter(point[0], point[1], marker='x', s=30, c='black', transform=ccrs.PlateCarree())
+                ax.scatter(point[0], point[1], marker='x', s=30, c='darkgoldenrod', transform=ccrs.PlateCarree())
 
         # Save the plot if desired
         if (type(spath) == str):
