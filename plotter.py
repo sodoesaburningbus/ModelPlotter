@@ -264,8 +264,10 @@ class model_plotter:
         #tvort[mask] = np.nan
 
         # Get boundaries of the data for consistent colormaps
-        bmin = min(np.nanmin(qgpv), np.nanmin(rvort), np.nanmin(pvort), np.nanmin(tvort))
-        bmax = max(np.nanmax(qgpv), np.nanmax(rvort), np.nanmax(pvort), np.nanmax(tvort))
+        #bmin = min(np.nanmin(qgpv), np.nanmin(rvort), np.nanmin(pvort), np.nanmin(tvort))
+        #bmax = max(np.nanmax(qgpv), np.nanmax(rvort), np.nanmax(pvort), np.nanmax(tvort))
+        bmin = -0.001
+        bmax = 0.001
         norm = mcolor.SymLogNorm(0.000000001, vmin=bmin, vmax=bmax)
 
         # Reset variable list
@@ -273,9 +275,10 @@ class model_plotter:
 
         # Make a four panel with the total QG PV and each term
         fig, axes = pp.subplots(nrows=2, ncols=2, figsize=(18,12), subplot_kw={'projection': ccrs.PlateCarree()}, constrained_layout=True)
+        fig.suptitle(f'Valid Time: {(self.date+timedelta(hours=self.forecast)).strftime("%Y-%m-%d %H:%M UTC")}', fontsize=16, fontweight='bold')
 
         # QG PV plot
-        axes[0,0].set_title('QG PV', loc='left', ha='left', fontsize=16, fontweight='bold')
+        axes[0,0].set_title('QG PV - 250 mb', loc='left', ha='left', fontsize=16, fontweight='bold')
         cont = axes[0,0].pcolormesh(data['lons'], data['lats'], qgpv, norm=norm, cmap='coolwarm')
 
         # Thermal Vorticity
@@ -291,8 +294,8 @@ class model_plotter:
         axes[1,1].pcolormesh(data['lons'], data['lats'], pvort, norm=norm, cmap='coolwarm')
 
         # Add a colorbar
-        cb = fig.colorbar(cont, ax=list(axes.ravel()), orientation='vertical')
-        cb.set_label('Vorticity', fontsize=16, fontweight='bold')
+        cb = fig.colorbar(cont, ax=list(axes.ravel()), orientation='horizontal', pad=0.02, aspect=50)
+        cb.set_label('Vorticity (s $^{-1}$)', fontsize=16, fontweight='bold')
 
         # Add decorations
         for ax in axes.flatten():
