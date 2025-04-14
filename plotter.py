@@ -215,6 +215,105 @@ class model_plotter:
 
         return fig, ax
 
+    ### Function to create a QG PV map
+    ### If save_data is a string, then the data will be saved as a numpy zip array to that path
+    ### If load_file is a string, then that numpy zip file will be loaded.
+    def qgpv_plot(self, spath=None, save_data=None, load_file=None, latlon_extent=[-135, -60, 20, 55], point=None, nbarbs=15, projection=ccrs.PlateCarree()):
+
+        # Preserve the current variable list
+        old_vars = self.vars
+
+        # Grab variables necessary for QG PV
+        self.set_vars({
+            'ABSV': ['250 mb'],
+            'HGT': ['250 mb'],
+            'TMP': ['200 mb', '250 mb', '300 mb'],
+        })
+
+        # Retreive the data
+        if (load_file == None):
+            data = self.download_vars()
+            
+            # Check if saving data
+            if (save_data != None):
+                np.savez(save_data, **data)
+
+        else:
+            data = np.load(load_file)
+
+        # Compute planetary vorticity
+        pvort = 2.0*2.0*np.pi/(24.0*3600.0)*np.sin(data['lats']*np.pi/180.0)
+        rvort = data['ABSV250 mb']-pvort
+
+        # Compute the stability parameter
+        theta_200mb = data['TMP200 mb']*((1000.0/200.0)**(287.05/1005.0))
+        theta_300mb = data['TMP300 mb']*((1000.0/300.0)**(287.05/1005.0))
+        Sp = -data['TMP250 mb'] * (np.log(theta_200mb)-np.log(theta_300mb))/(-100.0)
+
+        # Compute thermal (i.e. stretching) vorticity
+        tvort = (-(10**(-4))/Sp)*((np.log(data['TMP200 mb'])-np.log(data['TMP300 mb']))/(-100.0))
+
+        # Compute QG PV
+        qgpv = rvort+pvort+tvort
+
+        # Mask out data outside region of interest
+        mask = ~((data['lons']>latlon_extent[0]-0.1) & (data['lons']<latlon_extent[1]+0.1) & (data['lats']>latlon_extent[2]-0.1) & (data['lats']<latlon_extent[3]+0.1))
+        #qgpv[mask] = np.nan
+        #pvort[mask] = np.nan
+        #rvort[mask] = np.nan
+        #tvort[mask] = np.nan
+
+        # Get boundaries of the data for consistent colormaps
+        bmin = min(np.nanmin(qgpv), np.nanmin(rvort), np.nanmin(pvort), np.nanmin(tvort))
+        bmax = max(np.nanmax(qgpv), np.nanmax(rvort), np.nanmax(pvort), np.nanmax(tvort))
+        norm = mcolor.SymLogNorm(0.000000001, vmin=bmin, vmax=bmax)
+
+        # Reset variable list
+        self.vars = old_vars
+
+        # Make a four panel with the total QG PV and each term
+        fig, axes = pp.subplots(nrows=2, ncols=2, figsize=(18,12), subplot_kw={'projection': ccrs.PlateCarree()}, constrained_layout=True)
+
+        # QG PV plot
+        axes[0,0].set_title('QG PV', loc='left', ha='left', fontsize=16, fontweight='bold')
+        cont = axes[0,0].pcolormesh(data['lons'], data['lats'], qgpv, norm=norm, cmap='coolwarm')
+
+        # Thermal Vorticity
+        axes[1,0].set_title('Thermal Vorticity', loc='left', ha='left', fontsize=16, fontweight='bold')
+        axes[1,0].pcolormesh(data['lons'], data['lats'], tvort, norm=norm, cmap='coolwarm')
+
+        # Relative Vorticity
+        axes[0,1].set_title('Relative Vorticity', loc='left', ha='left', fontsize=16, fontweight='bold')
+        axes[0,1].pcolormesh(data['lons'], data['lats'], rvort, norm=norm, cmap='coolwarm')
+
+        # Planetary vorticity
+        axes[1,1].set_title('Planetary Vorticity', loc='left', ha='left', fontsize=16, fontweight='bold')
+        axes[1,1].pcolormesh(data['lons'], data['lats'], pvort, norm=norm, cmap='coolwarm')
+
+        # Add a colorbar
+        cb = fig.colorbar(cont, ax=list(axes.ravel()), orientation='vertical')
+        cb.set_label('Vorticity', fontsize=16, fontweight='bold')
+
+        # Add decorations
+        for ax in axes.flatten():
+
+            ax.add_feature(cfeature.COASTLINE)
+            ax.add_feature(cfeature.BORDERS)
+            ax.add_feature(cfeature.STATES)
+            ax.set_extent(latlon_extent)
+            ax.contour(data['lons'], data['lats'], data['HGT250 mb'], colors='black', levels=15)
+
+        # Add a point of interest
+        if (point != None):
+            for ax in axes.flatten():
+                ax.scatter(point[0], point[1], marker='x', s=30, c='darkgoldenrod', transform=ccrs.PlateCarree())
+
+        # Save the plot if desired
+        if (type(spath) == str):
+            pp.savefig(spath)
+
+        return
+
     ### Function to make a standardized 4-panel plot
     def four_panel(self, spath=None, latlon_extent=[-135, -60, 20, 55], point=None, nbarbs=15, projection=ccrs.PlateCarree()):
 
