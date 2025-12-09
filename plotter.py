@@ -379,13 +379,16 @@ class model_plotter:
         hcont = axes[1,0].contour(data['lons'], data['lats'], data['HGT700 mb'], colors='black', levels=20, transform=data_proj)
         axes[1,0].clabel(hcont, hcont.levels, inline=True, fontsize=10)
 
-        norm = mcolor.BoundaryNorm(np.linspace(-20, 20, 21), self.temp700.N, extend='both')
-        fcont = axes[1,0].pcolormesh(data['lons'], data['lats'], data['TMP700 mb']-273.15, cmap=self.temp700, norm=norm, shading='nearest', transform=data_proj)
+        #norm = mcolor.BoundaryNorm(np.linspace(-20, 20, 21), self.temp700.N, extend='both')
+        #fcont = axes[1,0].pcolormesh(data['lons'], data['lats'], data['TMP700 mb']-273.15, cmap=self.temp700, norm=norm, shading='nearest', transform=data_proj)
+        #cb = fig.colorbar(fcont, ax=axes[1,0], orientation='horizontal', pad=0.02, aspect=50)
+        #cb.set_label('Temperature (°C)', fontsize=14, fontweight='roman')
+        fcont = axes[1,0].pcolormesh(data['lons'], data['lats'], data['RH700 mb'], cmap='YlGnBu', vmin=0, vmax=100, shading='nearest', transform=data_proj)
         cb = fig.colorbar(fcont, ax=axes[1,0], orientation='horizontal', pad=0.02, aspect=50)
-        cb.set_label('Temperature (°C)', fontsize=14, fontweight='roman')
+        cb.set_label('Humidity (%)', fontsize=14, fontweight='roman')
 
-        mcont = axes[1,0].contour(data['lons'], data['lats'], data['RH700 mb'], colors='forestgreen', levels=[50,80], linestyles='--', transform=data_proj)
-        axes[1,0].clabel(mcont, mcont.levels, inline=True, fontsize=10)
+        #mcont = axes[1,0].contour(data['lons'], data['lats'], data['RH700 mb'], colors='forestgreen', levels=[50,80], linestyles='--', transform=data_proj)
+        #axes[1,0].clabel(mcont, mcont.levels, inline=True, fontsize=10)
 
         axes[1,0].barbs(data['lons'][::nbarbs, ::nbarbs], data['lats'][::nbarbs, ::nbarbs],
                         data['UGRD700 mb'][::nbarbs,::nbarbs], data['VGRD700 mb'][::nbarbs,::nbarbs], transform=data_proj)
@@ -428,8 +431,71 @@ class model_plotter:
 
         return fig, axes
 
+    ### Function to create a station plot using gridded data.
+    ### Specifies the level and the text products.
+    ### Input:
+    ###   date, datetime object, initialization date and time of the desired model run (UTC)
+    ###   plevel, int, the pressure level of the plot (mb)
+    ###   spath, string, location to save the file
+    ###   corners, dictionary with keys NE, SE, NW, SW with a GFS variable as the values.
+    ###      controls which variable is plotted where. Defaults to {"NE": "UGRD", "SE": "VGRD", "NW": "TMP", "SW": "DENS"}
+    ###   forecast, optional, integer, the forecast hour to use (default=0)
+    ###   latlon_extent, list of floats, domain over which to plot (west, east, south, north) in degrees
+    def text_plot(self, date, plevel, spath, corners={"NE": "UGRD", "SE": "VGRD", "NW": "TMP", "SW": "DENS"}, forecast=0, projection=ccrs.PlateCarree(), latlon_extent=[-135, -60, 20, 55]):
 
-    ### Function to make a standardized surface analysis plot
+        # Preserve the current variable list
+        old_vars = self.vars
+
+        # Retrieve the desired variables (handle density if necessary)
+        if ("DENS" in corners.values()):
+            values = list(corners.keys())+['TMP', 'SPFH']
+        else:
+            values = list(corners.keys())
+        new_vars = {f"{var}":f"{plevel:.0f} mb" for var in values}
+        
+        self.set_vars({f"{var}":f"{plevel:.0f} mb" for var in corners.values()})
+
+        # Download the data
+        data = self.download_vars()
+
+        # Compute the density if required
+        if ("DENS" in corners.values()):
+            tv = (1.0+(461.5/287.0-1.0)*data[f'SPFH{plevel} mb'])*data[f'TMP{plevel} mb']
+            data[f'DENS{plevel} mb'] = (plevel*100.0)/(287.0*tv)
+
+        # Create the map projection
+        data_proj = ccrs.PlateCarree()
+        map_proj = projection
+
+        # Make a plot with the gridded data displayed as text
+        fig, axes = pp.subplots(figsize=(18,12), subplot_kw={'projection': ccrs.PlateCarree()}, constrained_layout=True)
+        fig.suptitle(f'Valid Time: {(self.date+timedelta(hours=self.forecast)).strftime("%Y-%m-%d %H:%M UTC")}', fontsize=16, fontweight='bold')
+
+        # Gridded data
+        info_string = f"{data[corners['NW']+f'{plevel} mb']}\t{data[corners['NE']+f'{plevel} mb']}\n{data[corners['SW']+f'{plevel} mb']}\t{data[corners['SE']+f'{plevel} mb']}"
+        for i, lon in enumerate(data['lons']):
+            for j, lat in enumerate(data['lats']):
+                info_string = f"{data[corners['NW']+f'{plevel} mb'][j,i]}\t{data[corners['NE']+f'{plevel} mb'][j,i]}\n{data[corners['SW']+f'{plevel} mb'][j,i]}\t{data[corners['SE']+f'{plevel} mb'][j,i]}"
+                ax.text(lon, lat, info_string, fontsize=12)
+                ax.scatter(lon, lat, c='black', s=4)        
+
+        # Add decorations
+        for ax in axes.flatten():
+
+            ax.add_feature(cfeature.COASTLINE)
+            ax.add_feature(cfeature.BORDERS)
+            ax.add_feature(cfeature.STATES)
+            ax.set_extent(latlon_extent)
+
+        # Save the plot if desired
+        if (type(spath) == str):
+            pp.savefig(spath)
+
+        return
+
+    ############################################
+    ########### SUPPORTING FUNCTIONS ###########
+    ############################################
 
     ### Function to create default colormaps
     def create_colormaps(self):
